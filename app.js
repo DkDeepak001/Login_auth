@@ -32,7 +32,7 @@ const loginSchema = new mongoose.Schema({
 const User = new mongoose.model("User_Login_Data",loginSchema);
 
 const superUserSchemea = new mongoose.Schema({
-    superPower:loginSchema,
+    superPower:String,
     role:String
 })
 const superUser = new mongoose.model("superUser", superUserSchemea);
@@ -55,7 +55,7 @@ app.route("/login")
                     const foundResult = await result;
                     try{
                         if(foundResult === true){
-                            jwt.sign({ AuthId: user._id }, process.env.JWT_SECRET_KEY, function(err, token) {
+                            jwt.sign({ AuthId: user._id, username:user.username }, process.env.JWT_SECRET_KEY, function(err, token) {
                                 res.cookie("AuthToken",token);
                                 res.redirect("/");
                             });
@@ -123,6 +123,7 @@ function TokenValidator(req,res,next){
                     return;
                 }else{
                     if(userID === userDetails.id){
+                        req.userID = userID; 
                         console.log("true")
                         next();
                     }else{
@@ -139,6 +140,30 @@ function TokenValidator(req,res,next){
     }
 }
 
+ function onlySuperUser(req,res,next){
+    if(req.cookies.AuthToken){
+        jwt.verify(req.cookies.AuthToken, process.env.JWT_SECRET_KEY , async(err, decoded) => {
+           const Id = (decoded.AuthId);
+           superUser.findOne({superPower:Id},(err,superUser) => {
+            if(!err){
+                if(superUser){
+                    next()
+                }else{
+                    res.send("you dont have access to this page");
+                    return
+                }
+            }else{
+                console.log(err);
+                return;
+            }
+           })
+            
+         });
+   }else{
+       res.redirect("/");
+       return;
+   }
+}
 
 //route config for Home page
 app.route("/")
@@ -149,7 +174,7 @@ app.route("/")
 
 //route config for auth page
 app.route("/auth")
-    .get((req,res) => {
+    .get(onlySuperUser,(req,res) => {
         res.render("auth");
     })
 
@@ -158,8 +183,35 @@ app.route("/addAdmin")
     .get(TokenValidator,(req,res) => {
         res.render("addAdmin");
     })
-    .post((req,res) => {
-       console.log(req.body.username);
+    .post(TokenValidator,  (req,res) => {
+       const userName = (req.body.username);
+        console.log(req.userID)
+        User.findOne({username: userName}, async(err,foundUser)=>{
+            if(!foundUser){
+                console.log("no user found in this name");
+            }else{
+                const foundeUserId = await foundUser.id;
+                if( req.userID === foundeUserId ){
+                    const newSuperUser = new superUser({
+                        superPower:foundUser.id,
+                        role:'Super admin'
+                    })
+                    newSuperUser.save((e,createdSuperUser) => {
+                        if(e){
+                            console.log("error adding super user");
+
+                        }else{
+                            res.send("super user added to DB");
+                            res.redirect("/");
+                        }
+                    })
+                }else{
+                    console.log("don't have permission to add another uuser");;
+                }
+            }
+        })
+      
+
     })
 
 
